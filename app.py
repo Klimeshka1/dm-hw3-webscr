@@ -3,8 +3,35 @@ import pandas as pd
 from transformers import pipeline
 import plotly.express as px
 from datetime import datetime
+from wordcloud import WordCloud, STOPWORDS
+import matplotlib.pyplot as plt
+import re
 
 st.set_page_config(page_title="HW3 Web Scraping App", layout="wide")
+
+# ----------------------------
+# ✅ WordCloud helper function
+# ----------------------------
+@st.cache_data
+def build_wordcloud(texts):
+    text = " ".join(texts)
+
+    # clean text
+    text = re.sub(r"http\S+|www\S+", "", text)      # remove urls
+    text = re.sub(r"[^A-Za-z\s]", " ", text)        # keep letters only
+    text = re.sub(r"\s+", " ", text).strip()        # normalize spaces
+
+    wc = WordCloud(
+        width=1000,
+        height=500,
+        background_color="white",
+        stopwords=STOPWORDS,
+        max_words=100,
+        collocations=False
+    ).generate(text)
+
+    return wc
+
 
 # ----------------------------
 # ✅ Load CSV data
@@ -30,6 +57,7 @@ products_df, testimonials_df, reviews_df = load_data()
 st.sidebar.title("Navigation")
 section = st.sidebar.radio("Choose Section:", ["Products", "Testimonials", "Reviews"])
 
+
 # ----------------------------
 # ✅ Products Section
 # ----------------------------
@@ -38,6 +66,7 @@ if section == "Products":
     st.write("Showing scraped product data from web-scraping.dev")
 
     st.dataframe(products_df, use_container_width=True)
+
 
 # ----------------------------
 # ✅ Testimonials Section
@@ -48,6 +77,7 @@ elif section == "Testimonials":
 
     st.dataframe(testimonials_df, use_container_width=True)
 
+
 # ----------------------------
 # ✅ Reviews Section (Core Feature)
 # ----------------------------
@@ -55,16 +85,28 @@ elif section == "Reviews":
     st.title("⭐ Reviews + Sentiment Analysis (2023)")
 
     # ----------------------------
-    # ✅ Month Slider (Jan 2023 - Dec 2023)
+    # ✅ Month Slider (ONLY months that exist in the dataset for 2023)
     # ----------------------------
-    month_list = pd.date_range("2023-01-01", "2023-12-01", freq="MS")
+    reviews_2023 = reviews_df[reviews_df["date"].dt.year == 2023].copy()
+    reviews_2023 = reviews_2023.dropna(subset=["date"])
+
+    month_list = (
+        reviews_2023["date"]
+        .dt.to_period("M")
+        .drop_duplicates()
+        .sort_values()
+        .dt.to_timestamp()
+        .tolist()
+    )
+
     month_labels = [m.strftime("%b %Y") for m in month_list]
 
-    selected_month = st.select_slider(
+    selected_month = st.radio(
         "Select month in 2023:",
         options=month_labels,
-        value="Jan 2023"
-    )
+        horizontal=True
+        )
+
 
     # Convert back to datetime
     selected_index = month_labels.index(selected_month)
@@ -94,7 +136,10 @@ elif section == "Reviews":
 
     @st.cache_resource
     def load_model():
-        return pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
+        return pipeline(
+            "sentiment-analysis",
+            model="distilbert-base-uncased-finetuned-sst-2-english"
+        )
 
     sentiment_model = load_model()
 
@@ -107,6 +152,32 @@ elif section == "Reviews":
     filtered["confidence"] = [r["score"] for r in results]
 
     st.dataframe(filtered, use_container_width=True)
+
+    # ----------------------------
+    # ✅ BONUS: Word Cloud (by Sentiment)
+    # ----------------------------
+    st.subheader("☁️ Word Cloud (by Sentiment)")
+
+    sentiment_filter = st.selectbox(
+        "Choose sentiment for word cloud:",
+        options=["ALL"] + sorted(filtered["sentiment"].unique().tolist())
+    )
+
+    if sentiment_filter != "ALL":
+        wc_df = filtered[filtered["sentiment"] == sentiment_filter]
+    else:
+        wc_df = filtered
+
+    texts_wc = wc_df["text"].astype(str).tolist()
+
+    if len(texts_wc) == 0:
+        st.warning("No reviews for this sentiment in selected month.")
+    else:
+        wc = build_wordcloud(texts_wc)
+        fig_wc2, ax2 = plt.subplots(figsize=(12, 6))
+        ax2.imshow(wc, interpolation="bilinear")
+        ax2.axis("off")
+        st.pyplot(fig_wc2)
 
     # ----------------------------
     # ✅ Visualization: Bar Chart + Average Confidence
@@ -125,7 +196,7 @@ elif section == "Reviews":
         y="count",
         text="count",
         hover_data={"avg_confidence": ":.3f"},
-        title="Positive vs Negative Reviews"
+        title="Sentiment Distribution (Selected Month)"
     )
 
     st.plotly_chart(fig, use_container_width=True)
