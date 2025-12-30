@@ -43,9 +43,10 @@ tokenizers==0.22.1
 toml==0.10.2
 tornado==6.5.4
 tqdm==4.67.1
-transformers==4.57.3
+transformers==4.41.2
 typing_extensions==4.15.0
 tzdata==2025.3
 urllib3==2.6.2
 wordcloud
 matplotlib
+torch
